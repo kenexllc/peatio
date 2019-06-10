@@ -83,7 +83,7 @@ class Currency < ApplicationRecord
   # Allows to dynamically check value of code:
   #
   #   code.btc? # true if code equals to "btc".
-  #   code.xrp? # true if code equals to "xrp".
+  #   code.eth? # true if code equals to "eth".
   #
   def code
     id&.inquiry
@@ -99,6 +99,15 @@ class Currency < ApplicationRecord
     { code: code,
       coin: coin?,
       fiat: fiat? }
+  end
+
+  def to_blockchain_api_settings
+    # We pass options are available as top-level hash keys and via options for
+    # compatibility with Wallet#to_wallet_api_settings.
+    opt = options.compact.deep_symbolize_keys
+    opt.deep_symbolize_keys.merge(id:          id,
+                                  base_factor: base_factor,
+                                  options:     opt)
   end
 
   def summary
@@ -163,7 +172,7 @@ class Currency < ApplicationRecord
 end
 
 # == Schema Information
-# Schema version: 20190225171726
+# Schema version: 20190529142209
 #
 # Table name: currencies
 #
