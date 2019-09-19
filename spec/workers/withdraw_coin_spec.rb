@@ -3,9 +3,9 @@
 
 describe Workers::AMQP::WithdrawCoin do
   let(:member) { create(:member, :barong) }
-  let(:withdrawal) { create(:new_btc_withdraw, :with_deposit_liability) }
+  let(:withdrawal) { create(:btc_withdraw, :with_deposit_liability) }
   let(:processing_withdrawal) do
-    create(:new_btc_withdraw, :with_deposit_liability)
+    create(:btc_withdraw, :with_deposit_liability)
       .tap(&:submit!)
       .tap(&:accept!)
       .tap(&:process!)
@@ -61,21 +61,20 @@ describe Workers::AMQP::WithdrawCoin do
   context 'WalletService2 raises error' do
     before do
       WalletService.expects(:new)
-        .raises(Peatio::Wallet::Registry::NotRegisteredAdapterError)
+                   .raises(Peatio::Wallet::Registry::NotRegisteredAdapterError)
     end
 
-    it 'returns true and marks withdrawal as failed' do
-      processing_withdrawal.update!(attempts: 5)
+    it 'returns true and marks withdrawal as errored' do
       expect(Workers::AMQP::WithdrawCoin.new.process(processing_withdrawal.as_json)).to be_truthy
-      expect(processing_withdrawal.reload.failed?).to be_truthy
+      expect(processing_withdrawal.reload.errored?).to be_truthy
     end
   end
 
   context 'wallet balance is not sufficient' do
     before do
       WalletService.any_instance
-                    .expects(:load_balance!)
-                    .returns(withdrawal.amount * 0.9)
+                   .expects(:load_balance!)
+                   .returns(withdrawal.amount * 0.9)
     end
 
     it 'returns nil and skip withdrawal' do
@@ -87,36 +86,34 @@ describe Workers::AMQP::WithdrawCoin do
   context 'wallet balance is sufficient but build_withdrawal! raises error' do
     before do
       WalletService.any_instance
-                    .expects(:load_balance!)
-                    .returns(withdrawal.amount)
+                   .expects(:load_balance!)
+                   .returns(withdrawal.amount)
 
       WalletService.any_instance
-                    .expects(:build_withdrawal!)
-                    .with(instance_of(Withdraws::Coin))
-                    .raises(Peatio::Blockchain::ClientError)
-      Withdraw.any_instance.stubs(:attempts).returns(5)
+                   .expects(:build_withdrawal!)
+                   .with(instance_of(Withdraws::Coin))
+                   .raises(Peatio::Blockchain::ClientError)
     end
 
-    it 'returns true and marks withdrawal as failed' do
-      processing_withdrawal.update!(attempts: 5)
+    it 'returns true and marks withdrawal as errored' do
       expect(Workers::AMQP::WithdrawCoin.new.process(processing_withdrawal.as_json)).to be_truthy
-      expect(processing_withdrawal.reload.failed?).to be_truthy
+      expect(processing_withdrawal.reload.errored?).to be_truthy
     end
   end
 
-  context 'wallet balance is sufficient but build_withdrawal! returns transaction' do
+  context 'wallet balance is sufficient and build_withdrawal! returns transaction' do
     before do
       WalletService.any_instance
-                    .expects(:load_balance!)
-                    .returns(withdrawal.amount)
+                   .expects(:load_balance!)
+                   .returns(withdrawal.amount)
 
       transaction = Peatio::Transaction.new(amount: withdrawal.amount,
                                             to_address: withdrawal.rid,
                                             hash: 'hash-1')
       WalletService.any_instance
-                    .expects(:build_withdrawal!)
-                    .with(instance_of(Withdraws::Coin))
-                    .returns(transaction)
+                   .expects(:build_withdrawal!)
+                   .with(instance_of(Withdraws::Coin))
+                   .returns(transaction)
     end
 
     it 'returns true and dispatch withdrawal' do

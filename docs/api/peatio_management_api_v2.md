@@ -1,12 +1,12 @@
 # Peatio Management API v2
 Management API is server-to-server API with high privileges.
 
-## Version: 2.2.14
+## Version: 2.3.33
 
 **Contact information:**  
-peatio.tech  
-https://www.peatio.tech  
-hello@peatio.tech  
+openware.com  
+https://www.openware.com  
+hello@openware.com  
 
 **License:** https://github.com/rubykube/peatio/blob/master/LICENSE.md
 
@@ -419,9 +419,9 @@ Creates new transfer.
 
 | Name | Located in | Description | Required | Schema |
 | ---- | ---------- | ----------- | -------- | ---- |
-| key | formData | Unique Transfer Key. | Yes | integer |
-| kind | formData | Transfer Kind. | Yes | string |
-| desc | formData | Transfer Description. | No | string |
+| key | formData | Unique Transfer Key. | Yes | string |
+| category | formData | Transfer Category. | Yes | string |
+| description | formData | Transfer Description. | No | string |
 | operations[currency] | formData | Operation currency. | Yes | [ string ] |
 | operations[amount] | formData | Operation amount. | Yes | [ double ] |
 | operations[account_src][code] | formData | Source Account code. | Yes | [ integer ] |
@@ -456,6 +456,48 @@ Returns trades as paginated collection.
 | Code | Description | Schema |
 | ---- | ----------- | ------ |
 | 201 | Returns trades as paginated collection. | [Trade](#trade) |
+
+### /members/group
+
+#### POST
+##### Description:
+
+Set user group.
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| uid | formData | The shared user ID. | Yes | string |
+| group | formData | User gruop | Yes | string |
+
+##### Responses
+
+| Code | Description |
+| ---- | ----------- |
+| 201 | Set user group. |
+
+### /fee_schedule/trading_fees
+
+#### POST
+##### Description:
+
+Returns trading_fees table as paginated collection
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| group | formData | Member group | No | string |
+| market_id | formData | Market id | No | string |
+| page | formData | The page number (defaults to 1). | No | integer |
+| limit | formData | The number of objects per page (defaults to 100, maximum is 1000). | No | integer |
+
+##### Responses
+
+| Code | Description |
+| ---- | ----------- |
+| 201 | Returns trading_fees table as paginated collection |
 
 ### Models
 
@@ -526,14 +568,14 @@ Returns trades as paginated collection.
 | ---- | ---- | ----------- | -------- |
 | id | string | Trade ID. | No |
 | price | double | Trade price. | No |
-| volume | double | Trade volume. | No |
-| funds | double | Trade funds. | No |
+| amount | double | Trade amount. | No |
+| total | double | Trade total. | No |
 | market | string | Trade market id. | No |
 | created_at | string | Trade create time in iso8601 format. | No |
-| ask_id | string | Trade ask order id. | No |
-| bid_id | string | Trade bid order id. | No |
-| ask_member_uid | string | Trade ask member uid. | No |
-| bid_member_uid | string | Trade bid member uid. | No |
+| maker_order_id | string | Trade maker order id. | No |
+| taker_order_id | string | Trade taker order id. | No |
+| maker_member_uid | string | Trade ask member uid. | No |
+| taker_member_uid | string | Trade bid member uid. | No |
 | taker_type | string | Trade maker order type (sell or buy). | No |
 | side | string | Trade side. | No |
 | order_id | integer | Order id. | No |

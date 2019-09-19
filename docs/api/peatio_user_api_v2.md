@@ -1,12 +1,12 @@
 # Peatio User API v2
 API for Peatio application.
 
-## Version: 2.2.14
+## Version: 2.3.33
 
 **Contact information:**  
-peatio.tech  
-https://www.peatio.tech  
-hello@peatio.tech  
+openware.com  
+https://www.openware.com  
+hello@openware.com  
 
 **License:** https://github.com/rubykube/peatio/blob/master/LICENSE.md
 
@@ -17,6 +17,30 @@ hello@peatio.tech
 |---|---|
 |Name|JWT|
 |In|header|
+
+### /public/trading_fees
+
+#### GET
+##### Description:
+
+Returns trading_fees table as paginated collection
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| group | query | Member group for define maker/taker fee. | No | string |
+| market_id | query | Market id for define maker/taker fee. | No | string |
+| limit | query | Limit the number of returned paginations. Defaults to 100. | No | integer |
+| page | query | Specify the page of paginated results. | No | integer |
+| ordering | query | If set, returned values will be sorted in specific order, defaults to 'asc'. | No | string |
+| order_by | query | Name of the field, which result will be ordered by. | No | string |
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Returns trading_fees table as paginated collection | [ [TradingFee](#tradingfee) ] |
 
 ### /public/health/ready
 
@@ -98,22 +122,22 @@ Get ticker of specific market.
 
 ##### Responses
 
-| Code | Description |
-| ---- | ----------- |
-| 200 | Get ticker of specific market. |
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Get ticker of specific market. | [Ticker](#ticker) |
 
 ### /public/markets/tickers
 
 #### GET
 ##### Description:
 
-Get ticker of all markets.
+Get ticker of all markets (For response doc see /:market/tickers/ response).
 
 ##### Responses
 
-| Code | Description |
-| ---- | ----------- |
-| 200 | Get ticker of all markets. |
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Get ticker of all markets (For response doc see /:market/tickers/ response). | [Ticker](#ticker) |
 
 ### /public/markets/{market}/k-line
 
@@ -253,37 +277,143 @@ Get a currency
 | ---- | ----------- | ------ |
 | 200 | Get a currency | [Currency](#currency) |
 
-### /account/balances/{currency}
+### /account/withdraws
 
-#### GET
+#### POST
 ##### Description:
 
-Get user account by currency
+Creates new withdrawal to active beneficiary.
 
 ##### Parameters
 
 | Name | Located in | Description | Required | Schema |
 | ---- | ---------- | ----------- | -------- | ---- |
-| currency | path | The currency code. | Yes | string |
+| otp | formData | OTP to perform action | Yes | integer |
+| beneficiary_id | formData | ID of Active Beneficiary belonging to user. | Yes | integer |
+| currency | formData | The currency code. | Yes | string |
+| amount | formData | The amount to withdraw. | Yes | double |
+| note | formData | Optional metadata to be applied to the transaction. Used to tag transactions with memorable comments. | No | string |
 
 ##### Responses
 
-| Code | Description | Schema |
-| ---- | ----------- | ------ |
-| 200 | Get user account by currency | [Account](#account) |
-
-### /account/balances
+| Code | Description |
+| ---- | ----------- |
+| 201 | Creates new withdrawal to active beneficiary. |
 
 #### GET
 ##### Description:
 
-Get list of user accounts
+List your withdraws as paginated collection.
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| currency | query | Currency code. | No | string |
+| limit | query | Number of withdraws per page (defaults to 100, maximum is 100). | No | integer |
+| page | query | Page number (defaults to 1). | No | integer |
 
 ##### Responses
 
 | Code | Description | Schema |
 | ---- | ----------- | ------ |
-| 200 | Get list of user accounts | [ [Account](#account) ] |
+| 200 | List your withdraws as paginated collection. | [ [Withdraw](#withdraw) ] |
+
+### /account/beneficiaries/{id}
+
+#### DELETE
+##### Description:
+
+Delete beneficiary
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| id | path | Beneficiary Identifier in Database | Yes | integer |
+
+##### Responses
+
+| Code | Description |
+| ---- | ----------- |
+| 204 | Delete beneficiary |
+
+#### GET
+##### Description:
+
+Get beneficiary by ID
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| id | path | Beneficiary Identifier in Database | Yes | integer |
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Get beneficiary by ID | [Beneficiary](#beneficiary) |
+
+### /account/beneficiaries/{id}/activate
+
+#### PATCH
+##### Description:
+
+Activates beneficiary with pin
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| id | path | Beneficiary Identifier in Database | Yes | integer |
+| pin | formData | Pin code for beneficiary activation | Yes | integer |
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Activates beneficiary with pin | [Beneficiary](#beneficiary) |
+
+### /account/beneficiaries
+
+#### POST
+##### Description:
+
+Create new beneficiary
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| currency | formData | Beneficiary currency code. | Yes | string |
+| name | formData | Human rememberable name which refer beneficiary. | Yes | string |
+| description | formData | Human rememberable name which refer beneficiary. | No | string |
+| data | formData | Beneficiary data in JSON format | Yes | json |
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 201 | Create new beneficiary | [Beneficiary](#beneficiary) |
+
+#### GET
+##### Description:
+
+Get list of user beneficiaries
+
+##### Parameters
+
+| Name | Located in | Description | Required | Schema |
+| ---- | ---------- | ----------- | -------- | ---- |
+| currency | query | Beneficiary currency code. | No | string |
+| state | query | Defines either beneficiary active - user can use it to withdraw moneyor pending - requires beneficiary activation with pin. | No | string |
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Get list of user beneficiaries | [ [Beneficiary](#beneficiary) ] |
 
 ### /account/deposit_address/{currency}
 
@@ -346,47 +476,37 @@ Get your deposits history.
 | ---- | ----------- | ------ |
 | 200 | Get your deposits history. | [ [Deposit](#deposit) ] |
 
-### /account/withdraws
-
-#### POST
-##### Description:
-
-Creates new crypto withdrawal.
-
-##### Parameters
-
-| Name | Located in | Description | Required | Schema |
-| ---- | ---------- | ----------- | -------- | ---- |
-| otp | formData | OTP to perform action | Yes | integer |
-| rid | formData | Wallet address on the Blockchain. | Yes | string |
-| currency | formData | The currency code. | Yes | string |
-| amount | formData | The amount to withdraw. | Yes | double |
-| note | formData | Optional metadata to be applied to the transaction. Used to tag transactions with memorable comments. | No | string |
-
-##### Responses
-
-| Code | Description |
-| ---- | ----------- |
-| 201 | Creates new crypto withdrawal. |
+### /account/balances/{currency}
 
 #### GET
 ##### Description:
 
-List your withdraws as paginated collection.
+Get user account by currency
 
 ##### Parameters
 
 | Name | Located in | Description | Required | Schema |
 | ---- | ---------- | ----------- | -------- | ---- |
-| currency | query | Currency code. | No | string |
-| limit | query | Number of withdraws per page (defaults to 100, maximum is 100). | No | integer |
-| page | query | Page number (defaults to 1). | No | integer |
+| currency | path | The currency code. | Yes | string |
 
 ##### Responses
 
 | Code | Description | Schema |
 | ---- | ----------- | ------ |
-| 200 | List your withdraws as paginated collection. | [ [Withdraw](#withdraw) ] |
+| 200 | Get user account by currency | [Account](#account) |
+
+### /account/balances
+
+#### GET
+##### Description:
+
+Get list of user accounts
+
+##### Responses
+
+| Code | Description | Schema |
+| ---- | ----------- | ------ |
+| 200 | Get list of user accounts | [ [Account](#account) ] |
 
 ### /market/trades
 
@@ -477,7 +597,7 @@ Create a Sell/Buy order.
 #### GET
 ##### Description:
 
-Get your orders, results is paginated.
+Get your orders, result is paginated.
 
 ##### Parameters
 
@@ -495,7 +615,7 @@ Get your orders, results is paginated.
 
 | Code | Description | Schema |
 | ---- | ----------- | ------ |
-| 200 | Get your orders, results is paginated. | [ [Order](#order) ] |
+| 200 | Get your orders, result is paginated. | [ [Order](#order) ] |
 
 ### /market/orders/{id}
 
@@ -519,6 +639,44 @@ Get information of specified order.
 ### Models
 
 
+#### TradingFee
+
+Returns trading_fees table as paginated collection
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| id | integer | Unique trading fee table identifier in database. | No |
+| group | string | Member group for define maker/taker fee. | No |
+| market_id | string | Market id for define maker/taker fee. | No |
+| maker | double | Market maker fee. | No |
+| taker | double | Market taker fee. | No |
+| created_at | string | Trading fee table created time in iso8601 format. | No |
+| updated_at | string | Trading fee table updated time in iso8601 format. | No |
+
+#### Ticker
+
+Get ticker of all markets (For response doc see /:market/tickers/ response).
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| at | integer | Timestamp of ticker | No |
+| ticker | [TickerEntry](#tickerentry) | Ticker entry for specified time | No |
+
+#### TickerEntry
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| buy | double | Best buy (highest) price in current orderbook (0.0 if there is no buy orders) | No |
+| sell | double | Best sell (lowest) price in current orderbook (0.0 if there is no sell orders) | No |
+| low | double | The lowest trade price during last 24 hours (0.0 if no trades executed during last 24 hours) | No |
+| high | double | The highest trade price during last 24 hours (0.0 if no trades executed during last 24 hours) | No |
+| open | double | Price of the first trade executed 24 hours ago or less | No |
+| last | double | The last executed trade price | No |
+| volume | double | Total amount of trades executed during last 24 hours (recalculated once in 15 minuets) | No |
+| vol | double | Alias to volume | No |
+| avg_price | double | Average price more precisely VWAP is calculated by adding up the total traded for every transaction(price multiplied by the number of shares traded) and then dividing by the total shares traded | No |
+| price_change_percent | string | Price change in the next format +3.19%.Price change is calculated using next formula (last - open) / open * 100% | No |
+
 #### Trade
 
 Get your executed trades. Trades are sorted in reverse creation order.
@@ -527,11 +685,14 @@ Get your executed trades. Trades are sorted in reverse creation order.
 | ---- | ---- | ----------- | -------- |
 | id | string | Trade ID. | No |
 | price | double | Trade price. | No |
-| volume | double | Trade volume. | No |
-| funds | double | Trade funds. | No |
+| amount | double | Trade amount. | No |
+| total | double | Trade total (Amount * Price). | No |
+| fee_currency | double | Currency user's fees were charged in. | No |
+| fee | double | Percentage of fee user was charged for performed trade. | No |
+| fee_amount | double | Amount of fee user was charged for performed trade. | No |
 | market | string | Trade market id. | No |
 | created_at | string | Trade create time in iso8601 format. | No |
-| taker_type | string | Trade maker order type (sell or buy). | No |
+| taker_type | string | Trade taker order type (sell or buy). | No |
 | side | string | Trade side. | No |
 | order_id | integer | Order id. | No |
 
@@ -546,7 +707,7 @@ Get the order book of specified market.
 
 #### Order
 
-Get your orders, results is paginated.
+Get your orders, result is paginated.
 
 | Name | Type | Description | Required |
 | ---- | ---- | ----------- | -------- |
@@ -575,8 +736,6 @@ Get all available markets.
 | name | string | Market name. | No |
 | base_unit | string | Market Base unit. | No |
 | quote_unit | string | Market Quote unit. | No |
-| ask_fee | double | Market ask fee. | No |
-| bid_fee | double | Market bid fee. | No |
 | min_price | double | Minimum order price. | No |
 | max_price | double | Maximum order price. | No |
 | min_amount | double | Minimum order amount. | No |
@@ -605,32 +764,7 @@ Get a currency
 | base_factor | string | Currency base factor | No |
 | precision | string | Currency precision | No |
 | icon_url | string | Currency icon | No |
-
-#### Account
-
-Get list of user accounts
-
-| Name | Type | Description | Required |
-| ---- | ---- | ----------- | -------- |
-| currency | string | Currency code. | No |
-| balance | double | Account balance. | No |
-| locked | double | Account locked funds. | No |
-
-#### Deposit
-
-Get your deposits history.
-
-| Name | Type | Description | Required |
-| ---- | ---- | ----------- | -------- |
-| id | integer | Unique deposit id. | No |
-| currency | string | Deposit currency id. | No |
-| amount | double | Deposit amount. | No |
-| fee | double | Deposit fee. | No |
-| txid | string | Deposit transaction id. | No |
-| confirmations | integer | Number of deposit confirmations. | No |
-| state | string | Deposit state. | No |
-| created_at | string | The datetime when deposit was created. | No |
-| completed_at | string | The datetime when deposit was completed.. | No |
+| min_confirmations | string | Number of confirmations required for confirming deposit or withdrawal | No |
 
 #### Withdraw
 
@@ -651,6 +785,45 @@ List your withdraws as paginated collection.
 | created_at | string | The datetimes for the withdrawal. | No |
 | updated_at | string | The datetimes for the withdrawal. | No |
 | done_at | string | The datetime when withdraw was completed | No |
+
+#### Beneficiary
+
+Get list of user beneficiaries
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| id | integer | Beneficiary Identifier in Database | No |
+| currency | string | Beneficiary currency code. | No |
+| name | string | Human rememberable name which refer beneficiary. | No |
+| description | string | Human rememberable description of beneficiary. | No |
+| data | json | Bank Account details for fiat Beneficiary in JSON format.For crypto it's blockchain address. | No |
+| state | string | Defines either beneficiary active - user can use it to withdraw moneyor pending - requires beneficiary activation with pin. | No |
+
+#### Deposit
+
+Get your deposits history.
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| id | integer | Unique deposit id. | No |
+| currency | string | Deposit currency id. | No |
+| amount | double | Deposit amount. | No |
+| fee | double | Deposit fee. | No |
+| txid | string | Deposit transaction id. | No |
+| confirmations | integer | Number of deposit confirmations. | No |
+| state | string | Deposit state. | No |
+| created_at | string | The datetime when deposit was created. | No |
+| completed_at | string | The datetime when deposit was completed.. | No |
+
+#### Account
+
+Get list of user accounts
+
+| Name | Type | Description | Required |
+| ---- | ---- | ----------- | -------- |
+| currency | string | Currency code. | No |
+| balance | double | Account balance. | No |
+| locked | double | Account locked funds. | No |
 
 #### Member
 

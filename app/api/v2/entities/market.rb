@@ -41,22 +41,6 @@ module API
         )
 
         expose(
-          :ask_fee,
-          documentation: {
-            type: BigDecimal,
-            desc: "Market ask fee."
-          }
-        )
-
-        expose(
-          :bid_fee,
-          documentation: {
-            type: BigDecimal,
-            desc: "Market bid fee."
-          }
-        )
-
-        expose(
           :min_price,
           documentation: {
             type: BigDecimal,

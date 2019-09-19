@@ -12,11 +12,13 @@ class Member < ApplicationRecord
   has_many :payment_addresses, through: :accounts
   has_many :withdraws, -> { order(id: :desc) }
   has_many :deposits, -> { order(id: :desc) }
+  has_many :beneficiaries, -> { order(id: :desc) }
 
   scope :enabled, -> { where(state: 'active') }
 
   before_validation :downcase_email
 
+  validates :uid, length: { maximum: 32 }
   validates :email, presence: true, uniqueness: true, email: true
   validates :level, numericality: { greater_than_or_equal_to: 0 }
   validates :role, inclusion: { in: ROLES }
@@ -26,7 +28,7 @@ class Member < ApplicationRecord
   attr_readonly :email
 
   def trades
-    Trade.where('bid_member_id = ? OR ask_member_id = ?', id, id)
+    Trade.where('maker_id = ? OR taker_id = ?', id, id)
   end
 
   def role
@@ -160,15 +162,16 @@ private
 end
 
 # == Schema Information
-# Schema version: 20181027192001
+# Schema version: 20190829035814
 #
 # Table name: members
 #
 #  id         :integer          not null, primary key
-#  uid        :string(12)       not null
+#  uid        :string(32)       not null
 #  email      :string(255)      not null
 #  level      :integer          not null
 #  role       :string(16)       not null
+#  group      :string(32)       default("vip-0"), not null
 #  state      :string(16)       not null
 #  created_at :datetime         not null
 #  updated_at :datetime         not null

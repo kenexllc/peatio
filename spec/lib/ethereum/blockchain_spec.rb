@@ -93,6 +93,17 @@ describe Ethereum::Blockchain do
 
       expect{ blockchain.latest_block_number }.to raise_error(Peatio::Blockchain::ClientError)
     end
+
+    it 'keeps alive' do
+      stub_request(:post, endpoint)
+          .to_return(body: { result: '0x16b916',
+                             error:  nil,
+                             id:     nil }.to_json)
+          .with(headers: { 'Connection': 'keep-alive',
+                           'Keep-Alive': '30' })
+
+      blockchain.latest_block_number
+    end
   end
 
   context :fetch_block! do
@@ -160,7 +171,7 @@ describe Ethereum::Blockchain do
           :to_address=>"0xe3cb6897d83691a8eb8458140a1941ce1d6e6daa",
           :txout=>26,
           :block_number=>2621840,
-          :status=>"success",
+          :status=>"pending",
           :currency_id=>eth.id}]
       end
 
@@ -186,7 +197,7 @@ describe Ethereum::Blockchain do
           :to_address=>"0xc4d276bf32b71cdddb18f3b4d258f057a5ffda03",
           :txout=>13,
           :block_number=>2621842,
-          :status=>"success",
+          :status=>"pending",
           :currency_id=>eth.id},
          {:hash=>"0x826555325cec51c4d39b327e563ce3e8ee87e27be5911383f528724a62f0da5d",
           :amount=>2.to_d,
@@ -207,8 +218,15 @@ describe Ethereum::Blockchain do
           :to_address=>"0xe3cb6897d83691a8eb8458140a1941ce1d6e6dac",
           :txout=>9,
           :block_number=>2621842,
-          :status=>"success",
-          :currency_id=>trst.id}]
+          :status=>"failed",
+          :currency_id=>trst.id},
+         {:hash=>"0x5ab0f1a1f29da4e4ddb021c28e2383ec6bde03fb04a8e25c49a1ae5ae34b6f58",
+          :amount=>0.039082.to_d,
+          :to_address=>"0x40968978cf4e6b53ca161c5ba6918a926a8d5ac2",
+          :txout=>131,
+          :block_number=>8292243,
+          :status=>"pending",
+          :currency_id=>eth.id}]
       end
 
       it 'builds expected number of transactions' do
@@ -240,8 +258,8 @@ describe Ethereum::Blockchain do
           :txout=>26,
           :amount=>1.to_d,
           :block_number=>2621840,
-          :status=>"success",
-          :currency_id=>eth.id}]
+          :currency_id=>eth.id,
+          :status=>'pending'}]
       end
 
       it 'builds formatted transactions for passed transaction' do
@@ -375,4 +393,5 @@ describe Ethereum::Blockchain do
       end
     end
   end
+
 end

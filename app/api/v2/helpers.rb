@@ -6,8 +6,27 @@ module API
     module Helpers
       extend Memoist
 
+      def authorize!(*args)
+        Abilities.new(current_user).authorize!(*args)
+      rescue StandardError
+        error!({ errors: ['admin.ability.not_permitted'] }, 403)
+      end
+
       def authenticate!
-        current_user or raise Peatio::Auth::Error
+        current_user || raise(Peatio::Auth::Error)
+      end
+
+      def set_ets_context!
+        return unless defined?(Raven)
+
+        Raven.user_context(
+          email: current_user.email,
+          uid: current_user.uid,
+          role: current_user.role
+        ) if current_user
+        Raven.tags_context(
+          peatio_version: Peatio::Application::VERSION
+        )
       end
 
       def deposits_must_be_permitted!

@@ -12,7 +12,7 @@ end
 describe BlockchainService do
 
   let!(:blockchain) { create(:blockchain, 'fake-testnet') }
-  let(:block_number) { 1 }
+  let(:block_number) { 100 }
   let(:fake_adapter) { FakeBlockchain.new }
   let(:service) { BlockchainService.new(blockchain) }
 
@@ -38,7 +38,8 @@ describe BlockchainService do
                          .returns(fake_adapter)
                          .at_least_once
 
-    fake_adapter.stubs(:latest_block_number).returns(4)
+    service.stubs(:latest_block_number).returns(4)
+    fake_adapter.stubs(:latest_block_number).never
   end
 
   # Deposit context: (mock fetch_block)
@@ -79,7 +80,7 @@ describe BlockchainService do
       context 'collect deposit after processing block' do
         before do
           clear_redis
-          fake_adapter.stubs(:latest_block_number).returns(10)
+          service.stubs(:latest_block_number).returns(100)
           fake_adapter.stubs(:fetch_block!).returns(expected_transactions)
           AMQPQueue.expects(:enqueue).with(:events_processor, is_a(Hash))
           AMQPQueue.expects(:enqueue).with(:deposit_collection_fees, id: subject.first.id)
@@ -186,7 +187,7 @@ describe BlockchainService do
 
         before do
           clear_redis
-          fake_adapter.stubs(:latest_block_number).returns(10)
+          service.stubs(:latest_block_number).returns(100)
           fake_adapter.stubs(:fetch_block!).returns(expected_transactions)
           service.process_block(block_number)
         end
@@ -293,6 +294,83 @@ describe BlockchainService do
         expect(subject.failed?).to be true
       end
     end
+
+    context 'fail withdrawal if transaction has status :fail' do
+
+      let!(:fake_account1) { member.get_account(:fake1).tap { |ac| ac.update!(balance: 50, locked: 10) } }
+
+      let!(:withdrawal) do
+        Withdraw.create!(member: member,
+                         account: fake_account1,
+                         currency: fake_currency1,
+                         amount: 1,
+                         txid: "fake_hash",
+                         rid: 'fake_address',
+                         sum: 1,
+                         type: Withdraws::Coin,
+                         aasm_state: :confirming)
+      end
+
+      let!(:transaction) do
+        Peatio::Transaction.new(hash: 'fake_hash', to_address: 'fake_address', amount: 1, block_number: 3, currency_id: fake_currency1.id, txout: 10, status: 'pending')
+      end
+
+      let!(:failed_transaction) do
+        Peatio::Transaction.new(hash: 'fake_hash', to_address: 'fake_address', amount: 1, block_number: 3, currency_id: fake_currency1.id, txout: 10, status: 'failed')
+      end
+
+      before do
+        fake_adapter.stubs(:respond_to?).returns(true)
+        fake_adapter.stubs(:fetch_block!).returns([transaction])
+        fake_adapter.stubs(:fetch_transaction).with(transaction).returns(failed_transaction)
+        service.process_block(block_number)
+      end
+
+      subject { Withdraws::Coin.find_by(currency: fake_currency1, txid: transaction.hash) }
+
+      it do
+        expect(subject.failed?).to be true
+      end
+    end
+
+    context 'succeed withdrawal if transaction has status :success' do
+
+      let!(:fake_account1) { member.get_account(:fake1).tap { |ac| ac.update!(balance: 50, locked: 10) } }
+
+      let!(:withdrawal) do
+        Withdraw.create!(member: member,
+                         account: fake_account1,
+                         currency: fake_currency1,
+                         amount: 1,
+                         txid: "fake_hash",
+                         rid: 'fake_address',
+                         sum: 1,
+                         type: Withdraws::Coin,
+                         aasm_state: :confirming)
+      end
+
+      let!(:transaction) do
+        Peatio::Transaction.new(hash: 'fake_hash', to_address: 'fake_address', amount: 1, block_number: 3, currency_id: fake_currency1.id, txout: 10, status: 'pending')
+      end
+
+      let!(:succeed_transaction) do
+        Peatio::Transaction.new(hash: 'fake_hash', to_address: 'fake_address', amount: 1, block_number: 3, currency_id: fake_currency1.id, txout: 10, status: 'success')
+      end
+
+      before do
+        fake_adapter.stubs(:respond_to?).returns(true)
+        fake_adapter.stubs(:fetch_block!).returns([transaction])
+        service.stubs(:latest_block_number).returns(10)
+        fake_adapter.stubs(:fetch_transaction).with(transaction).returns(succeed_transaction)
+        service.process_block(block_number)
+      end
+
+      subject { Withdraws::Coin.find_by(currency: fake_currency1, txid: transaction.hash) }
+
+      it do
+        expect(subject.succeed?).to be true
+      end
+    end
   end
 
   describe 'Several blocks' do
@@ -309,7 +387,7 @@ describe BlockchainService do
 
     before do
       clear_redis
-      fake_adapter.stubs(:latest_block_number).returns(10)
+      service.stubs(:latest_block_number).returns(100)
       PaymentAddress.create!(currency: fake_currency1,
         account: fake_account1,
         address: 'fake_address')
@@ -321,7 +399,6 @@ describe BlockchainService do
 
     it 'creates deposits and updates withdrawals' do
       service.process_block(block_number)
-
       expect(Deposits::Coin.where(currency: fake_currency1).exists?).to be true
       expect(Deposits::Coin.where(currency: fake_currency2).exists?).to be true
 
@@ -341,7 +418,6 @@ describe BlockchainService do
       withdraw2.dispatch!
 
       service.process_block(block_number)
-
       expect(withdraw1.reload.succeed?).to be true
       expect(withdraw2.reload.succeed?).to be true
     end

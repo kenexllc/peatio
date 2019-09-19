@@ -84,13 +84,14 @@ RSpec.configure do |config|
     %i[usd btc eth trst ring eur].each { |ccy| FactoryBot.create(:currency, ccy) }
 
     %i[ eth_deposit eth_hot eth_warm eth_fee
-        peth_deposit peth_hot peth_fee
+        parity_deposit parity_hot parity_fee
         trst_deposit trst_hot
         ring_deposit ring_hot
         btc_hot btc_deposit ].each { |ccy| FactoryBot.create(:wallet, ccy) }
 
     %i[btcusd btceth].each { |market| FactoryBot.create(:market, market) }
     %w[101 102 201 202 211 212 301 302 401 402].each { |ac_code| FactoryBot.create(:operations_account, ac_code)}
+    FactoryBot.create(:trading_fee, market_id: :any, group: :any, maker: 0.0015, taker: 0.0015)
   end
 
   config.after(:each) do

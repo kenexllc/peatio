@@ -12,12 +12,20 @@
 # _usd_ is the `quote_unit`.
 #
 # Given market BTCUSD.
-# Ask/Base unit = BTC.
-# Bid/Quote unit = USD.
+# Ask/Base currency/unit = BTC.
+# Bid/Quote currency/unit = USD.
 
 class Market < ApplicationRecord
 
+  # == Constants ============================================================
+
+  # Since we use decimal with 16 digits fractional part for storing numbers in DB
+  # sum of multipliers fractional parts must not be greater then 16.
+  # In the worst situation we have 3 multipliers (price * amount * fee).
+  # For fee we define static precision - 6. See TradingFee::FEE_PRECISION.
+  # So 10 left for amount and price precision.
   DB_DECIMAL_PRECISION = 16
+  FUNDS_PRECISION = 10
 
   STATES = %w[enabled disabled hidden locked sale presale].freeze
   # enabled - user can view and trade.
@@ -27,37 +35,93 @@ class Market < ApplicationRecord
   # sale - user can't view but can trade with market orders.
   # presale - user can't view and trade. Admin can trade.
 
-  attr_readonly :base_unit, :quote_unit, :amount_precision, :price_precision
-  delegate :bids, :asks, :trades, :ticker, :h24_volume, :avg_h24_price,
-           to: :global
+  # == Attributes ===========================================================
 
-  scope :ordered, -> { order(position: :asc) }
-  scope :enabled, -> { where(state: :enabled) }
-  scope :with_base_unit, -> (base_unit){ where(base_unit: base_unit) }
+  attr_readonly :base_unit, :quote_unit
 
-  validate { errors.add(:base_unit, :invalid) if base_unit == quote_unit }
-  validate { errors.add(:id, :taken) if Market.where(base_unit: quote_unit, quote_unit: base_unit).present? }
+  # base_currency & quote_currency is preferred names instead of legacy
+  # base_unit & quote_unit.
+  # For avoiding DB migration and config we use alias as temporary solution.
+  alias_attribute :base_currency, :base_unit
+  alias_attribute :quote_currency, :quote_unit
+
+  # == Extensions ===========================================================
+
+  # == Relationships ========================================================
+
+  has_many :trading_fees, dependent: :delete_all
+
+  # == Validations ==========================================================
+
+  validate do
+    if quote_currency == base_currency
+      errors.add(:quote_currency, 'duplicates base currency')
+    end
+  end
+
+  validate on: :create do
+    if Market.where(base_currency: quote_currency, quote_currency: base_currency).present? ||
+       Market.where(base_currency: base_currency, quote_currency: quote_currency).present?
+      errors.add(:base, "#{base_currency.upcase}, #{quote_currency.upcase} market already exists")
+    end
+  end
+
   validates :id, uniqueness: { case_sensitive: false }, presence: true
-  validates :base_unit, :quote_unit, presence: true
-  validates :ask_fee, :bid_fee, presence: true, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 0.5 }
-  validates :amount_precision, :price_precision, :position, numericality: { greater_than_or_equal_to: 0, only_integer: true }
-  validates :base_unit, :quote_unit, inclusion: { in: -> (_) { Currency.codes } }
-  validate  :validate_preciseness
-  validate  :units_must_be_enabled, if: ->(m) { m.state.enabled? }
 
-  validates :min_price, presence: true, numericality: { greater_than_or_equal_to: 0 }
-  validates :max_price, numericality: { allow_blank: true, greater_than_or_equal_to: ->(market){ market.min_price }}
+  validates :base_currency, :quote_currency, presence: true
 
-  validates :min_amount, presence: true, numericality: { greater_than_or_equal_to: 0 }
+  validates :min_price, :max_price, precision: { less_than_or_eq_to: ->(m) { m.price_precision } }
+
+  validates :min_amount, precision: { less_than_or_eq_to: ->(m) { m.amount_precision } }
+
+  validates :amount_precision,
+            :price_precision,
+            :position,
+            numericality: { greater_than_or_equal_to: 0, only_integer: true }
+
+  validates :price_precision,
+            numericality: {
+              less_than_or_equal_to: -> (_m) { FUNDS_PRECISION }
+            }
+  validates :amount_precision,
+            numericality: {
+              less_than_or_equal_to: -> (m) { FUNDS_PRECISION - m.price_precision }
+            }
+
+  validates :base_currency, :quote_currency, inclusion: { in: -> (_) { Currency.codes } }
+
+  validate  :currencies_must_be_enabled, if: ->(m) { m.state.enabled? }
+
+  validates :min_price,
+            presence: true,
+            numericality: { greater_than_or_equal_to: ->(market){ market.min_price_by_precision } }
+  validates :max_price,
+            numericality: { allow_blank: true, greater_than_or_equal_to: ->(market){ market.min_price }},
+            if: ->(market) { !market.max_price.zero? }
+
+  validates :min_amount,
+            presence: true,
+            numericality: { greater_than_or_equal_to: ->(market){ market.min_amount_by_precision } }
 
   validates :state, inclusion: { in: STATES }
 
-  before_validation(on: :create) { self.id = "#{base_unit}#{quote_unit}" }
+  # == Scopes ===============================================================
 
+  scope :ordered, -> { order(position: :asc) }
+  scope :enabled, -> { where(state: :enabled) }
+
+  # == Callbacks ============================================================
+
+  before_validation(on: :create) { self.id = "#{base_currency}#{quote_currency}" }
   after_commit { AMQPQueue.enqueue(:matching, action: 'new', market: id) }
 
+  # == Instance Methods =====================================================
+
+  delegate :bids, :asks, :trades, :ticker, :h24_volume, :avg_h24_price,
+           to: :global
+
   def name
-    "#{base_unit}/#{quote_unit}".upcase
+    "#{base_currency}/#{quote_currency}".upcase
   end
 
   def state
@@ -83,32 +147,44 @@ class Market < ApplicationRecord
   end
 
   def unit_info
-    {name: name, base_unit: base_unit, quote_unit: quote_unit}
+    { name: name, base_unit: base_currency, quote_unit: quote_currency }
   end
 
   def global
     Global[id]
   end
 
-private
-
-  def validate_preciseness
-    if price_precision &&
-       amount_precision &&
-       price_precision + amount_precision > DB_DECIMAL_PRECISION
-      errors.add(:market, "is too precise (price_precision + amount_precision > #{DB_DECIMAL_PRECISION})")
-    end
+  # min_amount_by_precision - is the smallest positive number which could be
+  # rounded to value greater then 0 with precision defined by
+  # Market #amount_precision. So min_amount_by_precision is the smallest amount
+  # of order/trade for current market.
+  # E.g.
+  #   market.amount_precision => 4
+  #   min_amount_by_precision => 0.0001
+  #
+  #   market.amount_precision => 2
+  #   min_amount_by_precision => 0.01
+  #
+  def min_amount_by_precision
+    0.1.to_d**amount_precision
   end
 
-  def units_must_be_enabled
-    %i[base_unit quote_unit].each do |unit|
+  # See #min_amount_by_precision.
+  def min_price_by_precision
+    0.1.to_d**price_precision
+  end
+
+private
+
+  def currencies_must_be_enabled
+    %i[base_currency quote_currency].each do |unit|
       errors.add(unit, 'is not enabled.') if Currency.lock.find_by_id(public_send(unit))&.disabled?
     end
   end
 end
 
 # == Schema Information
-# Schema version: 20190624102330
+# Schema version: 20190816125948
 #
 # Table name: markets
 #
@@ -117,8 +193,6 @@ end
 #  quote_unit       :string(10)       not null
 #  amount_precision :integer          default(4), not null
 #  price_precision  :integer          default(4), not null
-#  ask_fee          :decimal(17, 16)  default(0.0), not null
-#  bid_fee          :decimal(17, 16)  default(0.0), not null
 #  min_price        :decimal(32, 16)  default(0.0), not null
 #  max_price        :decimal(32, 16)  default(0.0), not null
 #  min_amount       :decimal(32, 16)  default(0.0), not null

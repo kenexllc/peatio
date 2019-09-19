@@ -2,16 +2,9 @@
 # frozen_string_literal: true
 
 describe Withdraw do
-  describe '#fix_precision' do
-    it 'should round down to max precision' do
-      withdraw = create(:btc_withdraw, sum: '0.123456789')
-      expect(withdraw.sum).to eq('0.12345678'.to_d)
-    end
-  end
-
   context 'bank withdraw' do
     describe '#audit!' do
-      subject { create(:usd_withdraw) }
+      subject { create(:usd_withdraw, :with_deposit_liability) }
       before  { subject.submit! }
 
       it 'should accept withdraw with clean history' do
@@ -29,7 +22,7 @@ describe Withdraw do
 
   context 'coin withdraw' do
     describe '#audit!' do
-      subject { create(:btc_withdraw, sum: sum) }
+      subject { create(:btc_withdraw, :with_deposit_liability, sum: sum) }
       let(:sum) { 10.to_d }
       before { subject.submit! }
 
@@ -41,7 +34,7 @@ describe Withdraw do
 
       context 'internal recipient' do
         let(:payment_address) { create(:btc_payment_address) }
-        subject { create(:btc_withdraw, rid: payment_address.address) }
+        subject { create(:btc_withdraw, :with_deposit_liability, rid: payment_address.address) }
 
         around do |example|
           WebMock.disable_net_connect!
@@ -112,7 +105,7 @@ describe Withdraw do
   end
 
   context 'aasm_state' do
-    subject { create(:new_usd_withdraw, :with_deposit_liability, sum: 1000) }
+    subject { create(:usd_withdraw, :with_deposit_liability, sum: 1000) }
 
     before do
       subject.stubs(:send_withdraw_confirm_email)
@@ -201,21 +194,23 @@ describe Withdraw do
         expect(subject.processing?).to be true
       end
 
-      it 'retry withdraw after calling #process from :processing' do
-        subject.process!
-        subject.expects(:send_coins!)
-
-        expect { subject.process! }.to_not change { subject.account.amount }
-        expect(subject.attempts).to eq 2
-        expect(subject.processing?).to be true
-      end
-
       it 'transitions to :processing after calling #process from :skipped' do
         subject.process!
         expect(subject.processing?).to be true
 
         subject.skip!
         expect(subject.skipped?).to be true
+
+        subject.process!
+        expect(subject.processing?).to be true
+      end
+
+      it 'transitions to :errored after calling #err from :processing' do
+        subject.process!
+        expect(subject.processing?).to be true
+
+        expect { subject.err! StandardError.new }.to_not change { subject.account.amount }
+        expect(subject.errored?).to be true
 
         subject.process!
         expect(subject.processing?).to be true
@@ -415,7 +410,7 @@ describe Withdraw do
     context :load do
       let(:txid) { 'a738cb8411e2141f3de43c5f3e7a3aabe71c099bb91d296ded84f0daf29d881c' }
 
-      subject { create(:btc_withdraw) }
+      subject { create(:btc_withdraw, :with_deposit_liability) }
 
       before { subject.submit! }
       before { subject.accept! }
@@ -435,7 +430,7 @@ describe Withdraw do
     context :load do
       let(:txid) { 'a738cb8411e2141f3de43c5f3e7a3aabe71c099bb91d296ded84f0daf29d881c' }
 
-      subject { create(:btc_withdraw) }
+      subject { create(:btc_withdraw, :with_deposit_liability) }
 
       before { subject.submit! }
       before { subject.accept! }
@@ -451,21 +446,6 @@ describe Withdraw do
         expect(subject.confirming?).to be true
       end
     end
-
-    context :failed do
-      before do
-        subject.submit!
-        subject.accept!
-        subject.process!
-        Withdraw::MAX_ATTEMPTS.times { subject.process! }
-      end
-
-      it 'transitions to :failed after calling #fail from :failing' do
-        expect(subject.may_process?).to be false
-        expect { subject.fail! }.to_not change { subject.account.amount }
-        expect(subject.failed?).to be true
-      end
-    end
   end
 
   context '#quick?' do
@@ -478,24 +458,24 @@ describe Withdraw do
     end
 
     context 'returns false if exceeds 24h withdraw limit' do
-      subject(:withdraw) { create(:btc_withdraw, sum: 2, aasm_state: 'accepted') }
+      subject(:withdraw) { create(:btc_withdraw, :with_deposit_liability, sum: 2, aasm_state: 'accepted') }
       it { expect(withdraw).to_not be_quick }
     end
 
     context 'returns false if exceeds 72h withdraw limit' do
-      subject(:withdraw) { create(:btc_withdraw, sum: 4, aasm_state: 'accepted') }
+      subject(:withdraw) { create(:btc_withdraw, :with_deposit_liability, sum: 4, aasm_state: 'accepted') }
       it { expect(withdraw).to_not be_quick }
     end
 
     context 'returns true if doesn\'t exceeds 24h withdraw limit' do
-      subject(:withdraw) { create(:btc_withdraw, sum: 0.5, aasm_state: 'accepted') }
+      subject(:withdraw) { create(:btc_withdraw, :with_deposit_liability, sum: 0.5.to_d, aasm_state: 'accepted') }
       it { expect(withdraw).to be_quick }
     end
 
     context 'returns false if exceeds 24h withdraw limit' do
-      subject(:withdraw) { create(:btc_withdraw, sum: 0.5, aasm_state: 'accepted') }
+      subject(:withdraw) { create(:btc_withdraw, :with_deposit_liability, sum: 0.5.to_d, aasm_state: 'accepted') }
       it do
-        second_withdraw = create(:btc_withdraw, member: withdraw.member, sum: 0.8, aasm_state: 'accepted')
+        second_withdraw = create(:btc_withdraw, :with_deposit_liability, member: withdraw.member, sum: 0.8.to_d, aasm_state: 'accepted')
         second_withdraw.process!
         expect(second_withdraw).to_not be_quick
       end
@@ -503,7 +483,7 @@ describe Withdraw do
   end
 
   context 'fee is set to fixed value of 10' do
-    let(:withdraw) { create(:usd_withdraw, sum: 200) }
+    let(:withdraw) { create(:usd_withdraw, :with_deposit_liability, sum: 200) }
     before { Currency.any_instance.expects(:withdraw_fee).once.returns(10) }
     it 'computes fee' do
       expect(withdraw.fee).to eql 10.to_d
@@ -512,32 +492,85 @@ describe Withdraw do
   end
 
   context 'fee exceeds amount' do
-    let(:withdraw) { build(:usd_withdraw, sum: 200) }
+    let(:withdraw) { build(:usd_withdraw, sum: 200, member: nil) }
     before { Currency.any_instance.expects(:withdraw_fee).once.returns(200) }
     it 'fails validation' do
       expect(withdraw.save).to eq false
-      expect(withdraw.errors.full_messages).to include 'Amount must be greater than 0.0'
+      expect(withdraw.errors[:amount]).to match(["must be greater than 0.0"])
     end
   end
 
   it 'automatically generates TID if it is blank' do
-    expect(create(:btc_withdraw).tid).not_to be_blank
+    expect(create(:btc_withdraw, :with_deposit_liability).tid).not_to be_blank
   end
 
   it 'doesn\'t generate TID if it is not blank' do
-    expect(create(:btc_withdraw, tid: 'TID1234567890xyz').tid).to eq 'TID1234567890xyz'
+    expect(create(:btc_withdraw, :with_deposit_liability, tid: 'TID1234567890xyz').tid).to eq 'TID1234567890xyz'
   end
 
   it 'validates uniqueness of TID' do
-    record1 = create(:btc_withdraw)
-    record2 = build(:btc_withdraw, tid: record1.tid)
+    record1 = create(:btc_withdraw, :with_deposit_liability)
+    record2 = build(:btc_withdraw, tid: record1.tid, member: nil)
     record2.save
-    expect(record2.errors.full_messages.first).to match(/tid has already been taken/i)
+    expect(record2.errors[:tid]).to match(["has already been taken"])
   end
 
   it 'uppercases TID' do
-    record = create(:btc_withdraw)
+    record = create(:btc_withdraw, :with_deposit_liability)
     expect(record.tid).to eq record.tid.upcase
+  end
+
+  context 'using beneficiary' do
+    context 'fiat' do
+      let(:withdraw) do
+        create(:usd_withdraw,
+               :with_beneficiary,
+               :with_deposit_liability,
+               sum: 200)
+      end
+
+      it 'automatically sets rid from beneficiary' do
+        expect(withdraw.rid).to eq withdraw.beneficiary.rid
+      end
+    end
+
+    context 'crypto' do
+      let(:withdraw) do
+        create(:btc_withdraw,
+               :with_beneficiary,
+               :with_deposit_liability,
+               sum: 2)
+      end
+
+      it 'automatically sets rid from beneficiary' do
+        expect(withdraw.rid).to eq withdraw.beneficiary.rid
+      end
+    end
+
+    context 'non-active beneficiary' do
+      let(:currency) { Currency.all.sample }
+      let(:beneficiary) { create(:beneficiary, state: :pending, currency: currency) }
+
+      # Create deposit before withdraw for valid accounting cause withdraw
+      # build callback doesn't trigger deposit creation.
+      let!(:deposit) do
+        create(:deposit_usd, member: beneficiary.member, amount: 12)
+          .accept!
+      end
+
+      let(:withdraw) do
+        build(:usd_withdraw,
+               :with_deposit_liability,
+               beneficiary: beneficiary,
+               sum: 10,
+               member: beneficiary.member)
+      end
+
+      it 'automatically sets rid from beneficiary' do
+        expect(withdraw.valid?).to be_falsey
+        expect(withdraw.errors[:beneficiary]).to include('not active')
+      end
+    end
   end
 
   context 'CashAddr' do
@@ -580,8 +613,7 @@ describe Withdraw do
   end
 
   context 'validate min withdrawal sum' do
-
-    subject { build(:btc_withdraw, sum: 0.1) }
+    subject { build(:btc_withdraw, sum: 0.1, member: nil) }
 
     before do
       Currency.find('btc').update(min_withdraw_amount: 0.5.to_d)
@@ -627,6 +659,28 @@ describe Withdraw do
         expect(record.save).to eq false
         expect(record.errors.full_messages).to include 'Note is too long (maximum is 256 characters)'
       end
+    end
+  end
+
+  context 'validates sum precision' do
+    let(:currency) { Currency.find(:usd) }
+    let(:member)    { create(:member) }
+
+    # Create deposit before withdraw for valid accounting cause withdraw
+    # build callback doesn't trigger deposit creation.
+    let!(:deposit) do
+      create(:deposit_usd, member: member, amount: 12)
+        .accept!
+    end
+
+    let :record do
+      build(:usd_withdraw, :with_deposit_liability, :with_beneficiary, member: member, sum: 0.1234)
+    end
+
+    it do
+      expect(record.valid?).to be_falsey
+      expect(record.errors[:amount]).to include("precision must be less than or equal to #{currency.precision}")
+      expect(record.errors[:sum]).to include("precision must be less than or equal to #{currency.precision}")
     end
   end
 
